@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+
+RAG/chroma_db
+TTS/
+clean_data/
+test*
