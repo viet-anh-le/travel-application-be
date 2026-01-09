@@ -112,7 +112,7 @@ async def update_knowledge_file(
             "Name": name if name else file.filename,
             "Source": source if source else "Unknown"
         }
-        DataService.ingest_unstructured_file(file, metadata, retriever)
+        DataService.ingest_unstructured_file(file, file_id, metadata, retriever)
         
         return {
             "status": "success",
