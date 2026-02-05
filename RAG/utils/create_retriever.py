@@ -1,20 +1,29 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings 
+from langchain_huggingface import HuggingFaceEmbeddings
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever, ParentDocumentRetriever
 from langchain_classic.storage import InMemoryStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-#Phuc vu cho ParentDocumentRetriever
 from RAG.utils.split_data import load_content
 
-client = chromadb.PersistentClient()
+env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
+client = chromadb.CloudClient(
+    api_key=os.getenv("CHROMA_API_KEY"),
+    tenant="bc825549-1d01-4610-b4b4-43f7cb23f360",
+    database="Travel",
+)
+
 
 def create_vectordb(chunks):
     embeddings = HuggingFaceEmbeddings(
-        model_name="google/embeddinggemma-300m",
-        model_kwargs={"device": "cuda"} 
+        model_name="google/embeddinggemma-300m", model_kwargs={"device": "cpu"}
     )
 
     collection_name = "Van_mieu_Quoc_Tu_Giam"
@@ -32,15 +41,13 @@ def create_vectordb(chunks):
         name=collection_name,
         configuration={
             "hnsw": {"space": "cosine"},
-            "embedding_function": SentenceTransformerEmbeddingFunction(model_name="google/embeddinggemma-300m")
-        }
+            "embedding_function": SentenceTransformerEmbeddingFunction(
+                model_name="google/embeddinggemma-300m"
+            ),
+        },
     )
 
-    collection.add(
-        documents=documents,
-        metadatas=metadatas,
-        ids=ids
-    )
+    collection.add(documents=documents, metadatas=metadatas, ids=ids)
 
     vectordb = Chroma(
         client=client,
@@ -49,10 +56,9 @@ def create_vectordb(chunks):
     )
     return vectordb
 
+
 def create_ensemble_retriever(vectordb, query):
-    vectordb_retriever = vectordb.as_retriever(
-        search_kwargs={"k": 5}
-    )
+    vectordb_retriever = vectordb.as_retriever(search_kwargs={"k": 5})
     top_docs = vectordb.similarity_search_with_score(query, k=100)
     top_docs = [doc for doc, score in top_docs]
 
@@ -60,20 +66,17 @@ def create_ensemble_retriever(vectordb, query):
     retriever_bm25.k = 5
 
     ensemble_retriever = EnsembleRetriever(
-        retrievers=[vectordb_retriever, retriever_bm25],
-        weights=[0.7, 0.3]
+        retrievers=[vectordb_retriever, retriever_bm25], weights=[0.7, 0.3]
     )
     return ensemble_retriever
 
+
 def create_parent_retriever(filepath):
     embeddings = HuggingFaceEmbeddings(
-        model_name="google/embeddinggemma-300m",
-        model_kwargs={"device": "cuda"} 
+        model_name="google/embeddinggemma-300m", model_kwargs={"device": "cpu"}
     )
     docs = load_content(filepath)
-    vectordb = Chroma(
-        client=client, collection_name="split_parents", embedding_function=embeddings
-    )
+    vectordb = Chroma(client=client, collection_name="split_parents", embedding_function=embeddings)
     child_splitter = RecursiveCharacterTextSplitter(chunk_size=256, chunk_overlap=20)
     parent_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=20)
     store = InMemoryStore()

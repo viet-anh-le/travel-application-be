@@ -1,5 +1,6 @@
 import os
 import sys
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(project_root)
 from pathlib import Path
@@ -14,14 +15,15 @@ from langchain_classic.prompts import PromptTemplate
 from langchain_classic.agents import create_react_agent, AgentExecutor
 from core.llm import llm_plan
 
-env_path = Path(__file__).resolve().parent.parent.parent / '.env'
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
+
 
 class WeatherClient:
     def __init__(self):
         self.WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
         self.OPEN_WEATHER_API_KEY = os.getenv("OPEN_WEATHER_API_KEY")
-    
+
     # def weather_tool_wrapper(tool_input: str) -> Dict[str, Any]:
     #     """Expects tool_input as JSON string."""
     #     payload = json.loads(tool_input) if isinstance(tool_input, str) else tool_input
@@ -30,16 +32,16 @@ class WeatherClient:
     #     end_date = payload.get("end_date")
     #     return weather_forecast(city=city, start_date=start_date, end_date=end_date)
 
-
     def get_coordinates(self, city: str) -> Dict[str, Any]:
         geo_url = "https://api.openweathermap.org/geo/1.0/direct"
-        geo_res = requests.get(geo_url, params={"q": city, "limit": 1, "appid": self.OPEN_WEATHER_API_KEY})
+        geo_res = requests.get(
+            geo_url, params={"q": city, "limit": 1, "appid": self.OPEN_WEATHER_API_KEY}
+        )
         geo_res.raise_for_status()
         geo = geo_res.json()
         if not geo:
             raise ValueError(f"Không tìm thấy tọa độ cho: {city}")
         return {"lat": geo[0]["lat"], "lon": geo[0]["lon"]}
-
 
     def normalize_weather(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         loc = payload.get("location", {}) or {}
@@ -55,13 +57,15 @@ class WeatherClient:
         daily = []
         for d in fcs:
             day = d.get("day", {}) or {}
-            daily.append({
-                "date": d.get("date"),
-                "minTempC": day.get("mintemp_c"),
-                "maxTempC": day.get("maxtemp_c"),
-                "conditionText": (day.get("condition") or {}).get("text"),
-                "chanceOfRain": day.get("daily_chance_of_rain"),
-            })
+            daily.append(
+                {
+                    "date": d.get("date"),
+                    "minTempC": day.get("mintemp_c"),
+                    "maxTempC": day.get("maxtemp_c"),
+                    "conditionText": (day.get("condition") or {}).get("text"),
+                    "chanceOfRain": day.get("daily_chance_of_rain"),
+                }
+            )
 
         return {
             "location": {"name": loc.get("name"), "country": loc.get("country")},
@@ -69,9 +73,9 @@ class WeatherClient:
             "daily": daily,
         }
 
-
-
-    def weather_forecast(self, city: str, start_date: str = None, end_date: str = None, lang: str = "vi") -> Dict[str, Any]:
+    def weather_forecast(
+        self, city: str, start_date: str = None, end_date: str = None, lang: str = "vi"
+    ) -> Dict[str, Any]:
         today = date.today()
 
         if start_date:
@@ -82,16 +86,16 @@ class WeatherClient:
         if end_date:
             e = datetime.strptime(end_date, "%Y-%m-%d").date()
         else:
-            e = s + timedelta(days=2) 
+            e = s + timedelta(days=2)
 
         if e < s:
             s, e = e, s
 
         if s < today:
-            s = today 
+            s = today
 
         days = (e - s).days + 1
-        days = max(1, min(days, 14))  
+        days = max(1, min(days, 14))
 
         coords = self.get_coordinates(city)
         lat, lon = coords["lat"], coords["lon"]
@@ -114,7 +118,12 @@ class WeatherClient:
         normalized["daily"] = [d for d in normalized["daily"] if d.get("date") in valid_dates]
 
         normalized["meta"] = {
-            "query": {"city": city, "start_date": s.isoformat(), "end_date": e.isoformat(), "lang": lang},
+            "query": {
+                "city": city,
+                "start_date": s.isoformat(),
+                "end_date": e.isoformat(),
+                "lang": lang,
+            },
             "source": "weatherapi.com/forecast.json",
             "coordinates": {"lat": lat, "lon": lon},
             "units": "metric",
@@ -122,33 +131,37 @@ class WeatherClient:
 
         return normalized
 
+
 def get_weather(data: WeatherInput):
     if isinstance(data, str):
         data = json.loads(data)
-        
-    city = data['city']
-    start_date = data['start_date']
-    end_date = data['end_date']
+
+    city = data["city"]
+    start_date = data["start_date"]
+    end_date = data["end_date"]
 
     weather_client = WeatherClient()
-    weather_data = weather_client.weather_forecast(city=city, start_date=start_date, end_date=end_date, lang='vi')
+    weather_data = weather_client.weather_forecast(
+        city=city, start_date=start_date, end_date=end_date, lang="vi"
+    )
 
     return weather_data
+
 
 get_weather_tool = Tool.from_function(
     func=get_weather,
     name="weather_forecast",
     description=(
-            "Retrieve a 3–7 day weather forecast for a specific city and date range. "
-            "Use this tool to get weather details relevant to a planned trip itinerary. "
-            "Input must be a JSON object with the following fields: "
-            "{ "
-            '"city": "Name of the supported city (Ho Chi Minh, Da Nang, or Hanoi)", '
-            '"start_date": "Start date in YYYY-MM-DD", '
-            '"end_date": "End date in YYYY-MM-DD" '
-            "}. "
-            "Output returns temperature, conditions, and other daily forecast details."
-        )
+        "Retrieve a 3–7 day weather forecast for a specific city and date range. "
+        "Use this tool to get weather details relevant to a planned trip itinerary. "
+        "Input must be a JSON object with the following fields: "
+        "{ "
+        '"city": "Name of the supported city (Ho Chi Minh, Da Nang,Hanoi or Bac Ninh)", '
+        '"start_date": "Start date in YYYY-MM-DD", '
+        '"end_date": "End date in YYYY-MM-DD" '
+        "}. "
+        "Output returns temperature, conditions, and other daily forecast details."
+    ),
 )
 
 PROMPT = """
@@ -202,7 +215,6 @@ Thought: {agent_scratchpad}
 """
 
 
-
 weather_prompt = PromptTemplate(
     input_variables=["input", "agent_scratchpad"],
     template=PROMPT,
@@ -220,7 +232,7 @@ agent_executor = AgentExecutor(
     verbose=True,
     handle_parsing_errors=True,
     max_execution_time=30,
-    max_iterations=5
+    max_iterations=5,
 )
 
 if __name__ == "__main__":

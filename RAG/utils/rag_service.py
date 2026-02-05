@@ -9,9 +9,17 @@ from RAG.core.llm import llm_rag, llm_classify, llm_create_standalone_question
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 
+
 class RAGService:
     @staticmethod
-    async def generate_response(retriever, payload: ChatRequest, standalone_question: str, chat_history: list, topics: list = [], location: list = []):
+    async def generate_response(
+        retriever,
+        payload: ChatRequest,
+        standalone_question: str,
+        chat_history: list,
+        topics: list = [],
+        location: list = [],
+    ):
         try:
             # message = payload.message
             # session_id = payload.session_id
@@ -27,7 +35,7 @@ class RAGService:
 
                 1.  **Source Hierarchy (Context First, Knowledge Second):**
                     * **Core Entities:** The list of places, restaurants, dishes, or activities you recommend MUST come **EXCLUSIVELY** from the 'Context'. **DO NOT** invent new places or recommend items not mentioned in the 'Context'.
-                    * **Supplementary Details [IMPORTANT EXCEPTION]:** If a place/item is found in the 'Context' but specific factual details (specifically: **Address**, **Price**, **Opening Hours**, or **Contact Info**) are missing, you **ARE AUTHORIZED AND ENCOURAGED** to use your internal pre-trained knowledge to fill in these missing details.
+                    * **Supplementary Details [IMPORTANT EXCEPTION]:** If a place/item is found in the 'Context' but specific factual details (specifically: **Address**, **Price**, **Opening Hours**, or **Contact Info**) are missing, you **ARE AUTHORIZED AND ENCOURAGED** to use your internal pre-trained knowledge to fill in these missing details but **MUST NEVER** use internal knowledge to guess SPECIFIC PRICES, PHONE NUMBERS, or OPENING HOURS of small/local businesses (like 3-star hotels or local restaurants). LLMs do not have real-time access to this volatile data.
                     * **[CRITICAL - SEAMLESS BLENDING]:** You must blend these two sources (Context & Internal Knowledge) into a single, unified voice. **DO NOT** distinguish between them in your output. The user must NOT know which part came from the document and which came from your internal knowledge.
                     * If you use internal knowledge for Price/Hours, ensure it is the most recent estimate you know.
 
@@ -80,9 +88,12 @@ class RAGService:
                     * **Outdated Data Warning:** If the only available information seems outdated (e.g., from 2020 or earlier) and no newer data exists, you must explicitly state: *"Thông tin này được ghi nhận từ năm [Year]..."* to warn the user.
                 """
 
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system),
-                ("user", """Đây là 'Lịch sử trò chuyện' và 'Ngữ cảnh' để bạn tham khảo.
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", system),
+                    (
+                        "user",
+                        """Đây là 'Lịch sử trò chuyện' và 'Ngữ cảnh' để bạn tham khảo.
                                     
                     <Lịch sử trò chuyện>
                     {conversation}
@@ -93,17 +104,19 @@ class RAGService:
                     </Ngữ cảnh>
 
                     Hãy trả lời 'Câu hỏi' dưới đây dựa trên các quy tắc đã đề ra.
-                    Câu hỏi: {question}""")
-            ])
+                    Câu hỏi: {question}""",
+                    ),
+                ]
+            )
 
             rag_chain = prompt | llm | StrOutputParser()
 
             conversation_lines = []
 
             for msg in chat_history:
-                if msg.type == 'human':
+                if msg.type == "human":
                     conversation_lines.append(f"Người dùng: {msg}")
-                elif msg.type == 'ai':
+                elif msg.type == "ai":
                     conversation_lines.append(f"Trợ lý: {msg}")
 
             conversation_str = "\n".join(conversation_lines)
@@ -111,54 +124,59 @@ class RAGService:
             print("\n---------------------Conversation so far:---------------------\n")
             print(conversation_str)
 
-            if not topics or 'Off_topic' in topics:
+            if not topics or "Off_topic" in topics:
                 yield {"type": "context", "data": []}
-                async for chunk in rag_chain.astream({
-                    "conversation": conversation_str,
-                    "context": "No context provided (Off-topic or Chat).",
-                    "question": standalone_question
-                }):
+                async for chunk in rag_chain.astream(
+                    {
+                        "conversation": conversation_str,
+                        "context": "No context provided (Off-topic or Chat).",
+                        "question": standalone_question,
+                    }
+                ):
                     yield {"type": "content", "data": chunk}
                 return
-            
-            
+
             # Retrieve relevant documents
             context_docs = await RAGService.retrieve_documents(retriever, standalone_question)
-            
-            yield {
-                "type": "context",
-                "data": [doc.dict() for doc in context_docs] 
-            }
+
+            yield {"type": "context", "data": [doc.dict() for doc in context_docs]}
 
             formatted_contexts = []
+
             for doc in context_docs:
-                name = doc.metadata.get('Name', 'Không rõ')
-                
-                context_str = f"Tên tài liệu: {name}\nNội dung: {doc.page_content}"
+                name = doc.metadata.get("Name", "Không rõ")
+                updated_time = (
+                    doc.metadata.get("updated_at") or doc.metadata.get("year") or "Không xác định"
+                )
+
+                context_str = (
+                    f"--- TÀI LIỆU ---\n"
+                    f"Nguồn: {name}\n"
+                    f"Thời gian cập nhật dữ liệu: {updated_time}\n"
+                    f"Nội dung: {doc.page_content}\n"
+                    f"-----------------"
+                )
                 formatted_contexts.append(context_str)
 
             prompt_input = {
                 "conversation": conversation_str,
                 "context": "\n\n".join(formatted_contexts),
-                "question": standalone_question
+                "question": standalone_question,
             }
-            
-            full_response_log = "" 
+
+            full_response_log = ""
             print("\n---------------------Start Streaming Response:---------------------\n")
-            
+
             async for chunk in rag_chain.astream(prompt_input):
                 full_response_log += chunk
-                yield {
-                    "type": "content",
-                    "data": chunk
-                }
-            
-            print(full_response_log) 
+                yield {"type": "content", "data": chunk}
+
+            print(full_response_log)
             print("\n---------------------End Streaming---------------------\n")
 
         except Exception as e:
             raise RuntimeError(f"RAG generation error: {e}")
-    
+
     @staticmethod
     async def classify_query(query: str):
         try:
@@ -187,7 +205,7 @@ class RAGService:
                     2. **Location**
                     - Represents the **primary geographic area(s)** that are the **context** or **main subject** of the user's question.
                     - Must be a **list** (even if only one element).
-                    - Allowed values: ['Hà Nội', 'Thành phố Hồ Chí Minh', 'Đà Nẵng'].
+                    - Allowed values: ['Hà Nội', 'Thành phố Hồ Chí Minh', 'Đà Nẵng', 'Bắc Ninh'].
                     - You MUST NOT guess the city if it is not **explicitly** mentioned by name.
                     - If the question contains a **district, ward, street name, or any smaller area** (e.g., "Quận 5", "Cần Giờ", "Phú Thọ Hòa", "Nghĩa An") → you MUST **NOT** map it to any city name.
                     
@@ -289,10 +307,9 @@ class RAGService:
                 Now classify the following Question:
             """
 
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system),
-                ("user", "Question: {question}")
-            ])
+            prompt = ChatPromptTemplate.from_messages(
+                [("system", system), ("user", "Question: {question}")]
+            )
 
             classification_chain = prompt | llm | JsonOutputParser()
 
@@ -300,14 +317,26 @@ class RAGService:
             classification = await classification_chain.ainvoke({"question": query})
 
             # Filter allowed topics and locations
-            allowed_cities = ["Hà Nội", "Thành phố Hồ Chí Minh", "Đà Nẵng"]
-            allowed_topics = ['Food', 'Accommodation', 'Attraction', 'General', 'Festival', 'Restaurant', 'Transport', 'Plan', 'Off_topic']
+            allowed_cities = ["Hà Nội", "Thành phố Hồ Chí Minh", "Đà Nẵng", "Bắc Ninh"]
+            allowed_topics = [
+                "Food",
+                "Accommodation",
+                "Attraction",
+                "General",
+                "Festival",
+                "Restaurant",
+                "Transport",
+                "Plan",
+                "Off_topic",
+            ]
             topics = [topic for topic in classification.get("Topic", []) if topic in allowed_topics]
             classification["Topic"] = topics
             locations = [loc for loc in classification.get("Location", []) if loc in allowed_cities]
             classification["Location"] = locations
 
-            print(f"\n---------------------Classification result: {classification}---------------------\n")
+            print(
+                f"\n---------------------Classification result: {classification}---------------------\n"
+            )
 
             return classification
 
@@ -321,7 +350,11 @@ class RAGService:
             print("\n---------------------Retrieving relevant documents...---------------------\n")
             context_docs = await retriever.ainvoke(query)
             end_time_retrieval = os.times()
-            print("\n---------------------Retrieved relevant documents in", end_time_retrieval.user - start_time_retrieval.user, "seconds---------------------\n")
+            print(
+                "\n---------------------Retrieved relevant documents in",
+                end_time_retrieval.user - start_time_retrieval.user,
+                "seconds---------------------\n",
+            )
 
             print("\n---------------------Context Documents:---------------------\n")
             valid_docs = []
@@ -330,15 +363,17 @@ class RAGService:
                 if index > 0:
                     print("--------------------------------------------------------------\n")
 
-                relevance_score = doc.metadata.get('relevance_score')
+                relevance_score = doc.metadata.get("relevance_score")
 
                 if relevance_score is not None and relevance_score < 0.3:
-                    print(f"\nOriginal Index {index}: Removing low-relevance document (score: {relevance_score}):\n {doc.page_content[:200]}...\n")
-                    continue 
+                    print(
+                        f"\nOriginal Index {index}: Removing low-relevance document (score: {relevance_score}):\n {doc.page_content[:200]}...\n"
+                    )
+                    continue
 
                 print(f"Context number {index} (Original {index}):\n {doc.page_content}")
                 print("  Metadata:", doc.metadata)
-                
+
                 valid_docs.append(doc)
 
             print("\n---------------------End of Context Documents---------------------\n")
@@ -359,6 +394,9 @@ class RAGService:
                     "standalone_question": "Câu hỏi độc lập được viết lại ở đây"
                 }}
                 ```
+                **Output Format**
+                    -   Output ONLY valid JSON.
+                    -   No explanations.
             
                 QUY TẮC CỐT LÕI (BẮT BUỘC TUÂN THỦ):
 
@@ -442,41 +480,42 @@ class RAGService:
 
             history_lines = []
             for msg in chat_history:
-                role = "Human" if msg.type == 'human' else "AI"
-                history_lines.append(f"{role}: \"{msg}\"")
-            
+                role = "Human" if msg.type == "human" else "AI"
+                history_lines.append(f'{role}: "{msg}"')
+
             chat_history_str = "\n".join(history_lines)
             if chat_history_str:
                 chat_history_str = f"[{chat_history_str}]"
             else:
                 chat_history_str = "[]"
 
-            print('\n---------------------Formatted Chat History:---------------------\n', chat_history_str)
+            print(
+                "\n---------------------Formatted Chat History:---------------------\n",
+                chat_history_str,
+            )
 
             # Create prompt template for contextualizing question
             contextualize_q_prompt = ChatPromptTemplate.from_messages(
                 [
                     ("system", contextualize_q_system_prompt),
-                    ("human", "Lịch sử: {chat_history}\nCâu hỏi mới: {input}")
+                    ("human", "Lịch sử: {chat_history}\nCâu hỏi mới: {input}"),
                 ]
             )
 
             # Create the chain for generating standalone question
-            contextualize_q_chain = contextualize_q_prompt | llm_create_standalone_question() | JsonOutputParser()
+            contextualize_q_chain = (
+                contextualize_q_prompt | llm_create_standalone_question() | JsonOutputParser()
+            )
 
             standalone_question = await contextualize_q_chain.ainvoke(
-                {
-                    "input": question,
-                    "chat_history": chat_history_str
-                }
+                {"input": question, "chat_history": chat_history_str}
             )
 
             return standalone_question
         except Exception as e:
             print(f"Error in building standalone question: {e}")
             return {"standalone_question": question}
-        
-    
+
     async def classify_query_for_schedule(query: str):
         try:
             llm = llm_classify()
@@ -485,7 +524,7 @@ class RAGService:
 
                 Your SOLE task is to analyze the user's "Question" to determine two things:
                 1.  **Topic**: Is the question an explicit request for planning/scheduling?
-                2.  **Location**: Is the location context one of the 3 allowed cities?
+                2.  **Location**: Is the location context one of the 4 allowed cities?
 
                 ### CLASSIFICATION RULES:
 
@@ -497,7 +536,7 @@ class RAGService:
 
                 2.  **Location**
                     -   Represents only the main city context.
-                    -   Allowed values: ['Hà Nội', 'Thành phố Hồ Chí Minh', 'Đà Nẵng'].
+                    -   Allowed values: ['Hà Nội', 'Thành phố Hồ Chí Minh', 'Đà Nẵng', 'Bắc Ninh'].
                     -   If one of these cities is **explicitly mentioned**, output that city name. Example: `"Location": "Hà Nội"`
                     -   If **no allowed city** is mentioned (or only a district/small area like "Cần Giờ", "Quận 5" is mentioned), you MUST output: `"Location": null`
                     -   Do NOT return a list. Only return a single string or `null`.
@@ -508,7 +547,7 @@ class RAGService:
                         ```jsonW
                         {{
                         "Topic": "Plan" | null,
-                        "Location": "Hà Nội" | "Thành phố Hồ Chí Minh" | "Đà Nẵng" | null
+                        "Location": "Hà Nội" | "Thành phố Hồ Chí Minh" | "Đà Nẵng" | "Bắc Ninh" | null
                         }}
                         ```
                     -   No explanations.
@@ -548,14 +587,15 @@ class RAGService:
                 Now classify the following Question:
             """
 
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system),
-                ("user", "Question: {question}")
-            ])
+            prompt = ChatPromptTemplate.from_messages(
+                [("system", system), ("user", "Question: {question}")]
+            )
 
             classification_chain = prompt | llm | JsonOutputParser()
 
-            print(f"\n---------------------Classifying query for schedule: {query}---------------------\n")
+            print(
+                f"\n---------------------Classifying query for schedule: {query}---------------------\n"
+            )
             classification = await classification_chain.ainvoke({"question": query})
 
             raw_topic = classification.get("Topic")
@@ -566,17 +606,16 @@ class RAGService:
                 final_topic = "Plan"
 
             final_location = None
-            allowed_cities = ["Hà Nội", "Thành phố Hồ Chí Minh", "Đà Nẵng"]
+            allowed_cities = ["Hà Nội", "Thành phố Hồ Chí Minh", "Đà Nẵng", "Bắc Ninh"]
             if raw_location in allowed_cities:
                 final_location = raw_location
-                
+
             # Tạo kết quả cuối cùng, sạch sẽ
-            final_result = {
-                "Topic": final_topic,
-                "Location": final_location
-            }
-            
-            print(f"\n---------------------Classification result: {final_result}---------------------\n")
+            final_result = {"Topic": final_topic, "Location": final_location}
+
+            print(
+                f"\n---------------------Classification result: {final_result}---------------------\n"
+            )
 
             return final_result
 

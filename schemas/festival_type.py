@@ -2,6 +2,7 @@ from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+
 class CreateFestivalDTO(BaseModel):
     city_id: str
     name: str
@@ -9,6 +10,7 @@ class CreateFestivalDTO(BaseModel):
     start_date: datetime
     end_date: datetime
     image_urls: List[str] = Field(default_factory=list)
+
 
 class UpdateFestivalDTO(BaseModel):
     city_id: Optional[str] = None
@@ -18,13 +20,22 @@ class UpdateFestivalDTO(BaseModel):
     end_date: Optional[datetime] = None
     image_urls: Optional[List[str]] = None
 
+
 class GetAllFestivalsDTO(BaseModel):
     page: int = 1
     limit: int = 10
     search: Optional[str] = None
     city_id: Optional[str] = None
 
+
 class GetFestivalByCityIdDTO(BaseModel):
     id: str
     page: int = 1
     limit: int = 10
+
+
+class FestivalCalendarRequest(BaseModel):
+    user_id: str
+    start_time: datetime
+    duration_minutes: int = 180
+    note: Optional[str] = None

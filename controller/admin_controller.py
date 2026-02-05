@@ -1,5 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Path
 from typing import List, Optional
+from datetime import datetime
 from langchain_classic.retrievers import ParentDocumentRetriever
 from RAG.core.dependencies import get_parent_document_retriever
 from middleware.auth_jwt import get_current_user_payload_strict
@@ -7,26 +8,37 @@ from RAG.utils.data_service import DataService
 
 router = APIRouter(prefix="/admin/knowledge")
 
+
+def get_current_timestamp():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 # API Import Excel
 @router.post("/import-excel")
 async def import_excel(
     file: UploadFile = File(...),
     file_id: str = Form(...),
+    valid_from: Optional[str] = Form(None),
     retriever: ParentDocumentRetriever = Depends(get_parent_document_retriever),
     user_payload: dict = Depends(get_current_user_payload_strict),
 ):
     if user_payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to perform this action")
 
-    if not file.filename.endswith(('.xlsx', '.xls')):
+    if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="File must be Excel format")
-        
+
+    updated_at = get_current_timestamp()
+    valid_from_value = valid_from if valid_from else updated_at
+
     try:
-        await DataService.ingest_excel(file, file_id, retriever)
-        return {
-            "status": "success",
-            "message": f"Successfully imported documents from Excel file."
-        }
+        await DataService.ingest_excel(
+            file,
+            file_id,
+            retriever,
+            extra_metadata={"updated_at": updated_at, "valid_from": valid_from_value},
+        )
+        return {"status": "success", "message": f"Successfully imported documents from Excel file."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 
@@ -41,25 +53,30 @@ async def import_file(
     name: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     retriever: ParentDocumentRetriever = Depends(get_parent_document_retriever),
+    valid_from: Optional[str] = Form(None),
     user_payload: dict = Depends(get_current_user_payload_strict),
 ):
     if user_payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to perform this action")
+
+    updated_at = get_current_timestamp()
+    valid_from_value = valid_from if valid_from else updated_at
+    year_str = str(datetime.now().year)
 
     # Gom metadata từ Form vào dict
     metadata = {
         "Topic": topic,
         "Location": location,
         "Name": name if name else file.filename,
-        "Source": source if source else "Unknown"
+        "Source": source if source else "Unknown",
+        "updated_at": updated_at,
+        "valid_from": valid_from_value,
+        "year": year_str,
     }
 
     try:
         DataService.ingest_unstructured_file(file, file_id, metadata, retriever)
-        return {
-            "status": "success",
-            "message": f"File '{file.filename}' imported successfully."
-        }
+        return {"status": "success", "message": f"File '{file.filename}' imported successfully."}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
@@ -78,10 +95,7 @@ async def delete_knowledge(
 
     try:
         DataService.delete_document(file_id, retriever)
-        return {
-            "status": "success",
-            "message": f"Document {file_id} has been deleted."
-        }
+        return {"status": "success", "message": f"Document {file_id} has been deleted."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
 
@@ -95,6 +109,7 @@ async def update_knowledge_file(
     location: str = Form(...),
     name: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
+    valid_from: Optional[str] = Form(None),
     retriever: ParentDocumentRetriever = Depends(get_parent_document_retriever),
     user_payload: dict = Depends(get_current_user_payload_strict),
 ):
@@ -104,23 +119,31 @@ async def update_knowledge_file(
     try:
         # Xóa cái cũ
         DataService.delete_document(file_id, retriever)
-        
+
+        updated_at = get_current_timestamp()
+        valid_from_value = valid_from if valid_from else updated_at
+        year_str = str(datetime.now().year)
+
         # Thêm cái mới
         metadata = {
             "Topic": topic,
             "Location": location,
             "Name": name if name else file.filename,
-            "Source": source if source else "Unknown"
+            "Source": source if source else "Unknown",
+            "updated_at": updated_at,
+            "valid_from": valid_from_value,
+            "year": year_str,
         }
         DataService.ingest_unstructured_file(file, file_id, metadata, retriever)
-        
+
         return {
             "status": "success",
             "message": "Document updated successfully.",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
-    
+
+
 @router.get("", status_code=200)
 async def get_all_knowledge(
     retriever: ParentDocumentRetriever = Depends(get_parent_document_retriever),
@@ -134,10 +157,6 @@ async def get_all_knowledge(
 
     try:
         documents = DataService.get_all_files(retriever)
-        return {
-            "status": "success",
-            "data": documents,
-            "total": len(documents)
-        }
+        return {"status": "success", "data": documents, "total": len(documents)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve documents: {str(e)}")

@@ -9,14 +9,15 @@ SECTION A: MANDATORY RULES (NOT TOOLS - You MUST follow these by yourself)
 
 RULE #1: LOCATION NORMALIZATION (Apply BEFORE any tool call)
 ────────────────────────────────────────────────────────────
-The system ONLY supports THREE exact Vietnamese location strings:
+The system ONLY supports FOUR exact Vietnamese location strings:
   • "Hà Nội" (NOT "Hanoi")
   • "Đà Nẵng" (NOT "Da Nang", "Danang")
   • "Thành phố Hồ Chí Minh" (NOT "Ho Chi Minh City", "HCMC", "Saigon")
+  • "Bắc Ninh"
 
 ACTION YOU MUST TAKE:
   1. Extract user's location mention from the question.
-  2. Normalize it to ONE of the three exact strings above.
+  2. Normalize it to ONE of the four exact strings above.
   3. Use ONLY this normalized string in all tool calls.
   
 EXAMPLE:
@@ -157,6 +158,7 @@ RULE #6. FINAL ANSWER CONSTRUCTION:
 Question: {input}
 Thought: {agent_scratchpad}
 """
+
 
 def get_react_prompt():
     current_date = datetime.now().date().isoformat()

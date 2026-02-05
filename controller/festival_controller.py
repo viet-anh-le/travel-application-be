@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Body
 from services.festival_service import festival_service
 from schemas.festival_type import (
     CreateFestivalDTO,
     UpdateFestivalDTO,
-    GetAllFestivalsDTO
+    GetAllFestivalsDTO,
+    FestivalCalendarRequest,
 )
 
 router = APIRouter(prefix="/festival", tags=["Festival"])
+
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_festival(body: CreateFestivalDTO):
@@ -14,6 +16,7 @@ async def create_festival(body: CreateFestivalDTO):
     Tạo lễ hội mới.
     """
     return await festival_service.create(body)
+
 
 @router.get("", status_code=status.HTTP_200_OK)
 async def get_all_festivals(query_params: GetAllFestivalsDTO = Depends()):
@@ -23,12 +26,14 @@ async def get_all_festivals(query_params: GetAllFestivalsDTO = Depends()):
     """
     return await festival_service.get_all(query_params)
 
+
 @router.get("/{id}", status_code=status.HTTP_200_OK)
 async def get_festival_by_id(id: str):
     """
     Lấy chi tiết lễ hội theo ID.
     """
     return await festival_service.get_by_id(id)
+
 
 @router.put("/{id}", status_code=status.HTTP_200_OK)
 async def update_festival(id: str, body: UpdateFestivalDTO):
@@ -37,9 +42,18 @@ async def update_festival(id: str, body: UpdateFestivalDTO):
     """
     return await festival_service.update(id, body)
 
+
 @router.delete("/{id}", status_code=status.HTTP_200_OK)
 async def delete_festival(id: str):
     """
     Xóa lễ hội.
     """
     return await festival_service.delete(id)
+
+
+@router.post("/{id}/google-calendar", status_code=status.HTTP_201_CREATED)
+async def create_festival_calendar_event(id: str, payload: FestivalCalendarRequest = Body(...)):
+    """
+    Thêm lễ hội vào Google Calendar
+    """
+    return await festival_service.create_calendar_event(festival_id=id, payload=payload)

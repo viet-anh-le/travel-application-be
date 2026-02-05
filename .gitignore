@@ -7,3 +7,7 @@ RAG/chroma_db
 TTS/
 clean_data/
 test*
+check_env/
+RAG/crawl.py
+RAG/migrate.py
+env.yaml

@@ -1,10 +1,19 @@
+import os
+from dotenv import load_dotenv
+from pathlib import Path
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-client = chromadb.PersistentClient(path="./RAG/chroma_db")
+env_path = Path(__file__).resolve().parent.parent.parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
+client = chromadb.CloudClient(
+    api_key=os.getenv("CHROMA_API_KEY"),
+    tenant='bc825549-1d01-4610-b4b4-43f7cb23f360',
+    database='Travel'
+)
 class ChromaConfig:
     @staticmethod
     def get_vector_store():
